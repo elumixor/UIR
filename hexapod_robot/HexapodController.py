@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 # import messages
-import math
 
 from messages import *
 
@@ -61,7 +60,7 @@ class HexapodController:
 
         return Twist(Vector3(x=linear), Vector3(z=angular))
 
-    def goto_reactive(self, goal, odometry, collision, laser_scan):
+    def goto_reactive(self, goal, odometry, collision, laser_scan: LaserScan):
         """Method to steer the robot towards the goal position while avoiding
            contact with the obstacles given its current odometry, collision
            status and laser scan data
@@ -73,6 +72,7 @@ class HexapodController:
         Returns:
             cmd: Twist steering command
         """
+
         if collision:
             return None
 
@@ -99,7 +99,40 @@ class HexapodController:
         elif dphi > 1:
             dphi -= 2
 
-        linear = distance
-        angular = dphi * C_TURNING_SPEED
+        distances = laser_scan.distances
+        range_min = laser_scan.range_min
+        range_max = laser_scan.range_max
 
-        return Twist(Vector3(x=linear), Vector3(z=angular))
+        half = len(distances) // 2
+
+        left = distances[:half]
+        right = distances[half:]
+
+        scan_left = float("inf")
+        scan_right = float("inf")
+
+        for d in left:
+            if d < range_min or d > range_max:
+                continue
+
+            if d < scan_left:
+                scan_left = d
+
+        for d in right:
+            if d < range_min or d > range_max:
+                continue
+
+            if d < scan_right:
+                scan_right = d
+
+        repulsive_force = 1 / scan_left - 1 / scan_right
+
+        print(f"[{goal.position.x}, {goal.position.y}] :: [{robot.position.x:.3f}, {robot.position.y:.3f}] :: {scan_left:.3f} :: {scan_right:.3f}")
+
+        angular_speed_navigation_component = dphi * C_TURNING_SPEED
+        angular_speed_avoidance_component = repulsive_force * C_AVOID_SPEED
+        angular_speed = angular_speed_navigation_component + angular_speed_avoidance_component
+
+        linear = distance
+
+        return Twist(Vector3(x=linear), Vector3(z=angular_speed))
